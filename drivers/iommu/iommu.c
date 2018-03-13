@@ -941,8 +941,15 @@ struct iommu_group *pci_device_group(struct device *dev)
 	 * If we find an alias along the way that already belongs to a
 	 * group, use it.
 	 */
-	if (pci_for_each_dma_alias(pdev, get_pci_alias_or_group, &data))
+
+	/*
+	 * find the PCIE - PCI bridge and set the same iommu group
+	 * same meaning of DMA alias
+	 */
+	if (pci_for_each_dma_alias(pdev, get_pci_alias_or_group, &data)){
+		printk("dazhang1_iommu:device %s is dma alias to group %d\n", dev_name(dev), data.group->id);
 		return data.group;
+	}
 
 	pdev = data.pdev;
 
@@ -971,17 +978,21 @@ struct iommu_group *pci_device_group(struct device *dev)
 	 * device or another device aliases us, use the same group.
 	 */
 	group = get_pci_alias_group(pdev, (unsigned long *)devfns);
-	if (group)
+	if (group){
+		printk("dazhang1_iommu:Look for existing groups on device aliases.  If we alias another device or another aliases us");
+		printk("dazhang1_iommu:device %s is group alias to group %d\n", dev_name(dev), group->id);
 		return group;
+	}
 
-	/*
-	 * Look for existing groups on non-isolated functions on the same
-	 * slot and aliases of those funcions, if any.  No need to clear
-	 * the search bitmap, the tested devfns are still valid.
-	 */
 	group = get_pci_function_alias_group(pdev, (unsigned long *)devfns);
-	if (group)
+	if (group) {
+		printk("dazhang1_iommu:find out the acs cap funtion in the same slot and assign a single group.\n");
+		printk("dazhang1_iommu:Look for existing groups on non-isolated functions on the same\n");
+		printk("dazhang1_iommu:slot and aliases of those funcions, if any.  No need to clear\n");
+		printk("dazhang1_iommu:search bitmap, the tested devfns are still valid.\n");
+		printk("dazhang1_iommu:device %s is function alias to group %d\n", dev_name(dev), group->id);
 		return group;
+	}
 
 	/* No shared group found, allocate new */
 	return iommu_group_alloc();
@@ -1010,7 +1021,7 @@ struct iommu_group *iommu_group_get_for_dev(struct device *dev)
 	if (!ops)
 		return ERR_PTR(-EINVAL);
 
-	group = ops->device_group(dev);
+	group = ops->device_group(dev); /* pci_device_group(dev) */
 	if (WARN_ON_ONCE(group == NULL))
 		return ERR_PTR(-EINVAL);
 
@@ -1160,7 +1171,7 @@ static int iommu_bus_init(struct bus_type *bus, const struct iommu_ops *ops)
 	err = bus_register_notifier(bus, nb);
 	if (err)
 		goto out_free;
-
+	/* sperated to groups for each pci device */
 	err = bus_for_each_dev(bus, NULL, &cb, add_iommu_group);
 	if (err)
 		goto out_err;
