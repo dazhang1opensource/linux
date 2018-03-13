@@ -819,6 +819,7 @@ static void domain_update_iommu_cap(struct dmar_domain *domain)
 	domain->iommu_superpage = domain_update_iommu_superpage(NULL);
 }
 
+/* get 128bits context entry through bus/devfn root->entry */
 static inline struct context_entry *iommu_context_addr(struct intel_iommu *iommu,
 						       u8 bus, u8 devfn, int alloc)
 {
@@ -1694,10 +1695,12 @@ static int iommu_init_domains(struct intel_iommu *iommu)
 	}
 
 	size = (ALIGN(ndomains, 256) >> 8) * sizeof(struct dmar_domain **);
+	printk("dazhang1_iommu: alloc domain** size is %lx\n", size);
 	iommu->domains = kzalloc(size, GFP_KERNEL);
 
 	if (iommu->domains) {
 		size = 256 * sizeof(struct dmar_domain *);
+		printk("dazhang1_iommu:alloc domain* size is %lx\n", size);
 		iommu->domains[0] = kzalloc(size, GFP_KERNEL);
 	}
 
@@ -2261,6 +2264,7 @@ static int __domain_mapping(struct dmar_domain *domain, unsigned long iov_pfn,
 
 		if (!pte) {
 			largepage_lvl = hardware_largepage_caps(domain, iov_pfn, phys_pfn, sg_res);
+			/* get the pte by iova level */
 
 			first_pte = pte = pfn_to_dma_pte(domain, iov_pfn, &largepage_lvl);
 			if (!pte)
@@ -2291,6 +2295,7 @@ static int __domain_mapping(struct dmar_domain *domain, unsigned long iov_pfn,
 		/* We don't need lock here, nobody else
 		 * touches the iova range
 		 */
+		// set the phsical address to pte
 		tmp = cmpxchg64_local(&pte->val, 0ULL, pteval);
 		if (tmp) {
 			static int dumps = 5;
@@ -3251,6 +3256,8 @@ static int __init init_dmars(void)
 		pr_err_once("Exceeded %d IOMMUs\n", DMAR_UNITS_SUPPORTED);
 	}
 
+	printk("dazhang1_iommu:we are support %d iommus(dmar hardware units)\n", g_num_of_iommus);
+
 	/* Preallocate enough resources for IOMMU hot-addition */
 	if (g_num_of_iommus < DMAR_UNITS_SUPPORTED)
 		g_num_of_iommus = DMAR_UNITS_SUPPORTED;
@@ -3286,6 +3293,9 @@ static int __init init_dmars(void)
 		 * we could share the same root & context tables
 		 * among all IOMMU's. Need to Split it later.
 		 */
+
+		//alloc 4K root entry
+
 		ret = iommu_alloc_root_entry(iommu);
 		if (ret)
 			goto free_iommu;
@@ -3414,6 +3424,7 @@ domains_done:
 			 * we always have to disable PMRs or DMA may fail on
 			 * this device
 			 */
+			printk("dazhang1_iommu:iommu id %d is not active\n", i);
 			if (force_on)
 				iommu_disable_protect_mem_regions(iommu);
 			continue;
@@ -5225,6 +5236,15 @@ static inline unsigned long intel_iommu_get_pts(struct intel_iommu *iommu)
 	return find_first_bit((unsigned long *)&iommu->pasid_max,
 			MAX_NR_PASID_BITS) - 5;
 }
+
+/*
+ ** address in requests-without-PASID as GPA, and address in
+ ** requests-with-PASID as Virtual Address (VA)
+ ** (or Guest Virtual Address (GVA), if such request is from
+ ** a device assigned to a virtual machine).
+ ** The translated address is referred to as HPA.
+ ** for SVM usage.requests-with-PASID
+ **/
 
 int intel_iommu_enable_pasid(struct intel_iommu *iommu, struct intel_svm_dev *sdev)
 {
